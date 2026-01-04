@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { ScanProgress, ScanResult, DuplicateGroup } from '../types';
+import { ScanProgress, ScanResult, DuplicateGroup, FileInfo } from '../types';
+
+// Helper function to sort files by modification date
+const sortByModified = (files: FileInfo[], ascending: boolean): FileInfo[] => {
+  return [...files].sort((a, b) =>
+    ascending ? a.modified - b.modified : b.modified - a.modified
+  );
+};
 
 interface AppState {
   // Scan state
@@ -21,12 +28,16 @@ interface AppState {
   setSelectedPaths: (paths: string[]) => void;
   toggleFileSelection: (path: string) => void;
   selectAllInGroup: (group: DuplicateGroup, keepFirst: boolean) => void;
+  selectOldestInGroup: (group: DuplicateGroup) => void;
+  selectNewestInGroup: (group: DuplicateGroup) => void;
+  selectAllOldest: () => void;
+  selectAllNewest: () => void;
   clearSelection: () => void;
   setCurrentView: (view: 'home' | 'scanning' | 'results') => void;
   reset: () => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   isScanning: false,
   scanProgress: null,
   scanResult: null,
@@ -53,6 +64,52 @@ export const useStore = create<AppState>((set) => ({
     const newSet = new Set(state.selectedFiles);
     const filesToSelect = keepFirst ? group.files.slice(1) : group.files;
     filesToSelect.forEach((file) => newSet.add(file.path));
+    return { selectedFiles: newSet };
+  }),
+
+  // Select all files except the oldest (keep oldest)
+  selectOldestInGroup: (group) => set((state) => {
+    const newSet = new Set(state.selectedFiles);
+    const sorted = sortByModified(group.files, true); // oldest first
+    // Select all except the oldest (first after sorting)
+    sorted.slice(1).forEach((file) => newSet.add(file.path));
+    return { selectedFiles: newSet };
+  }),
+
+  // Select all files except the newest (keep newest)
+  selectNewestInGroup: (group) => set((state) => {
+    const newSet = new Set(state.selectedFiles);
+    const sorted = sortByModified(group.files, false); // newest first
+    // Select all except the newest (first after sorting)
+    sorted.slice(1).forEach((file) => newSet.add(file.path));
+    return { selectedFiles: newSet };
+  }),
+
+  // Select oldest in ALL groups (keep newest in each group)
+  selectAllOldest: () => set(() => {
+    const newSet = new Set<string>();
+    const { scanResult } = get();
+    if (!scanResult) return { selectedFiles: newSet };
+
+    scanResult.duplicates.forEach((group) => {
+      const sorted = sortByModified(group.files, true); // oldest first
+      // Select all except the oldest
+      sorted.slice(1).forEach((file) => newSet.add(file.path));
+    });
+    return { selectedFiles: newSet };
+  }),
+
+  // Select newest in ALL groups (keep oldest in each group)
+  selectAllNewest: () => set(() => {
+    const newSet = new Set<string>();
+    const { scanResult } = get();
+    if (!scanResult) return { selectedFiles: newSet };
+
+    scanResult.duplicates.forEach((group) => {
+      const sorted = sortByModified(group.files, false); // newest first
+      // Select all except the newest
+      sorted.slice(1).forEach((file) => newSet.add(file.path));
+    });
     return { selectedFiles: newSet };
   }),
 
