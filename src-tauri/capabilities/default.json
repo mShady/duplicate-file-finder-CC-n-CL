@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the duplicate file finder",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "fs:default",
+    "fs:allow-read",
+    "fs:scope-home",
+    "dialog:default",
+    "dialog:allow-open",
+    "shell:default"
+  ]
+}
