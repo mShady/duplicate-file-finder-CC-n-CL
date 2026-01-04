@@ -1,3 +1,7 @@
+mod scanner;
+
+pub use scanner::{FileScanner, HashEngine, ScanResult, ScanProgress, ScanPhase, DuplicateGroup, FileInfo};
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
