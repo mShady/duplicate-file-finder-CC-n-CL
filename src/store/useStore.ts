@@ -26,7 +26,7 @@ interface AppState {
   reset: () => void;
 }
 
-export const useStore = create<AppState>((set, get) => ({
+export const useStore = create<AppState>((set) => ({
   isScanning: false,
   scanProgress: null,
   scanResult: null,
