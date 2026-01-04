@@ -31,20 +31,38 @@ impl FileScanner {
         let start_time = Instant::now();
         let files_found = AtomicU64::new(0);
         let files_processed = AtomicU64::new(0);
+        let bytes_processed = AtomicU64::new(0);
 
-        // Phase 1: Discover all files
-        self.emit_progress(&app, ScanPhase::Discovering, 0, 0, None);
+        // Phase 1: Discover all files (phase 1 of 4)
+        self.emit_enhanced_progress(
+            &app,
+            ScanPhase::Discovering,
+            1, 4,
+            0, 0, 0,
+            None,
+            None,
+            &start_time,
+        );
 
         let mut all_files: Vec<FileInfo> = Vec::new();
         for path in &paths {
-            let files = self.discover_files(path, &app, &files_found);
+            let files = self.discover_files(path, &app, &files_found, &bytes_processed, &start_time);
             all_files.extend(files);
         }
 
         let total_files = all_files.len() as u64;
+        let total_bytes = bytes_processed.load(Ordering::Relaxed);
 
         // Phase 2: Group by size (instant filter - eliminates unique sizes)
-        self.emit_progress(&app, ScanPhase::Grouping, total_files, 0, None);
+        self.emit_enhanced_progress(
+            &app,
+            ScanPhase::Grouping,
+            2, 4,
+            total_files, 0, total_bytes,
+            None,
+            None,
+            &start_time,
+        );
 
         let size_groups: HashMap<u64, Vec<FileInfo>> = all_files
             .into_iter()
@@ -63,21 +81,33 @@ impl FileScanner {
         let potential_count = potential_duplicates.len() as u64;
 
         // Phase 3: Quick hash (first 4KB) - fast filter for same-size files
-        self.emit_progress(&app, ScanPhase::QuickHashing, potential_count, 0, None);
+        self.emit_enhanced_progress(
+            &app,
+            ScanPhase::QuickHashing,
+            3, 4,
+            potential_count, 0, 0,
+            None,
+            None,
+            &start_time,
+        );
         files_processed.store(0, Ordering::Relaxed);
+        bytes_processed.store(0, Ordering::Relaxed);
 
         let quick_hashed: Vec<FileInfo> = potential_duplicates
             .into_par_iter()
             .filter_map(|mut file| {
                 let count = files_processed.fetch_add(1, Ordering::Relaxed);
+                let bytes = bytes_processed.fetch_add(file.size.min(4096), Ordering::Relaxed);
                 if count.is_multiple_of(100) {
-                    let _ = app.emit("scan-progress", ScanProgress {
-                        phase: ScanPhase::QuickHashing,
-                        files_found: potential_count,
-                        files_processed: count,
-                        bytes_processed: 0,
-                        current_file: Some(file.path.display().to_string()),
-                    });
+                    self.emit_enhanced_progress(
+                        &app,
+                        ScanPhase::QuickHashing,
+                        3, 4,
+                        potential_count, count, bytes,
+                        Some(file.path.display().to_string()),
+                        file.path.parent().map(|p| p.display().to_string()),
+                        &start_time,
+                    );
                 }
 
                 match HashEngine::compute_quick_hash(&file.path, file.size) {
@@ -110,21 +140,33 @@ impl FileScanner {
         let needs_full_count = needs_full_hash.len() as u64;
 
         // Phase 4: Full hash - only for files that passed quick hash filter
-        self.emit_progress(&app, ScanPhase::FullHashing, needs_full_count, 0, None);
+        self.emit_enhanced_progress(
+            &app,
+            ScanPhase::FullHashing,
+            4, 4,
+            needs_full_count, 0, 0,
+            None,
+            None,
+            &start_time,
+        );
         files_processed.store(0, Ordering::Relaxed);
+        bytes_processed.store(0, Ordering::Relaxed);
 
         let fully_hashed: Vec<FileInfo> = needs_full_hash
             .into_par_iter()
             .filter_map(|mut file| {
                 let count = files_processed.fetch_add(1, Ordering::Relaxed);
+                let bytes = bytes_processed.fetch_add(file.size, Ordering::Relaxed);
                 if count.is_multiple_of(50) {
-                    let _ = app.emit("scan-progress", ScanProgress {
-                        phase: ScanPhase::FullHashing,
-                        files_found: needs_full_count,
-                        files_processed: count,
-                        bytes_processed: 0,
-                        current_file: Some(file.path.display().to_string()),
-                    });
+                    self.emit_enhanced_progress(
+                        &app,
+                        ScanPhase::FullHashing,
+                        4, 4,
+                        needs_full_count, count, bytes,
+                        Some(file.path.display().to_string()),
+                        file.path.parent().map(|p| p.display().to_string()),
+                        &start_time,
+                    );
                 }
 
                 match HashEngine::compute_hash(&file.path) {
@@ -162,7 +204,15 @@ impl FileScanner {
             .map(|g| g.size * (g.files.len() as u64 - 1))
             .sum();
 
-        self.emit_progress(&app, ScanPhase::Complete, total_files, total_files, None);
+        self.emit_enhanced_progress(
+            &app,
+            ScanPhase::Complete,
+            4, 4,
+            total_files, total_files, total_bytes,
+            None,
+            None,
+            &start_time,
+        );
 
         Ok(ScanResult {
             duplicates,
@@ -172,7 +222,63 @@ impl FileScanner {
         })
     }
 
-    fn discover_files(&self, root: &Path, app: &AppHandle, counter: &AtomicU64) -> Vec<FileInfo> {
+    #[allow(clippy::too_many_arguments)]
+    fn emit_enhanced_progress(
+        &self,
+        app: &AppHandle,
+        phase: ScanPhase,
+        phase_number: u8,
+        total_phases: u8,
+        found: u64,
+        processed: u64,
+        bytes: u64,
+        file: Option<String>,
+        directory: Option<String>,
+        start_time: &Instant,
+    ) {
+        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+        let files_per_second = if elapsed_ms > 0 {
+            (processed as f64) / (elapsed_ms as f64 / 1000.0)
+        } else {
+            0.0
+        };
+
+        // Estimate remaining time based on current phase progress
+        let estimated_remaining_ms = if processed > 0 && found > processed {
+            let remaining_files = found - processed;
+            let ms_per_file = elapsed_ms as f64 / processed as f64;
+            Some((remaining_files as f64 * ms_per_file) as u64)
+        } else {
+            None
+        };
+
+        let current_directory = file.as_ref().and_then(|f| {
+            std::path::Path::new(f).parent().map(|p| p.display().to_string())
+        }).or(directory);
+
+        let _ = app.emit("scan-progress", ScanProgress {
+            phase,
+            phase_number,
+            total_phases,
+            files_found: found,
+            files_processed: processed,
+            bytes_processed: bytes,
+            current_file: file,
+            current_directory,
+            elapsed_ms,
+            files_per_second,
+            estimated_remaining_ms,
+        });
+    }
+
+    fn discover_files(
+        &self,
+        root: &Path,
+        app: &AppHandle,
+        counter: &AtomicU64,
+        bytes_counter: &AtomicU64,
+        start_time: &Instant,
+    ) -> Vec<FileInfo> {
         WalkDir::new(root)
             .follow_links(false)
             .into_iter()
@@ -191,14 +297,20 @@ impl FileScanner {
                 }
 
                 let count = counter.fetch_add(1, Ordering::Relaxed);
-                if count.is_multiple_of(1000) {
-                    let _ = app.emit("scan-progress", ScanProgress {
-                        phase: ScanPhase::Discovering,
-                        files_found: count,
-                        files_processed: 0,
-                        bytes_processed: 0,
-                        current_file: Some(entry.path().display().to_string()),
-                    });
+                let total_bytes = bytes_counter.fetch_add(size, Ordering::Relaxed);
+
+                if count.is_multiple_of(500) {
+                    self.emit_enhanced_progress(
+                        app,
+                        ScanPhase::Discovering,
+                        1, 4,
+                        count,
+                        count,
+                        total_bytes,
+                        Some(entry.path().display().to_string()),
+                        entry.path().parent().map(|p| p.display().to_string()),
+                        start_time,
+                    );
                 }
 
                 Some(FileInfo {
@@ -220,16 +332,6 @@ impl FileScanner {
                 })
             })
             .collect()
-    }
-
-    fn emit_progress(&self, app: &AppHandle, phase: ScanPhase, found: u64, processed: u64, file: Option<String>) {
-        let _ = app.emit("scan-progress", ScanProgress {
-            phase,
-            files_found: found,
-            files_processed: processed,
-            bytes_processed: 0,
-            current_file: file,
-        });
     }
 }
 

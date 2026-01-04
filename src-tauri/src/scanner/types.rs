@@ -22,10 +22,16 @@ pub struct DuplicateGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanProgress {
     pub phase: ScanPhase,
+    pub phase_number: u8,           // Current phase (1-4)
+    pub total_phases: u8,           // Total phases (4)
     pub files_found: u64,
     pub files_processed: u64,
-    pub bytes_processed: u64,
+    pub bytes_processed: u64,       // Actually populate this now
     pub current_file: Option<String>,
+    pub current_directory: Option<String>,  // Parent directory being scanned
+    pub elapsed_ms: u64,            // Time elapsed since scan start
+    pub files_per_second: f64,      // Processing speed
+    pub estimated_remaining_ms: Option<u64>, // ETA (when calculable)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
