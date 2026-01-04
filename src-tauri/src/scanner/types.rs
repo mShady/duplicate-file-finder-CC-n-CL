@@ -44,3 +44,58 @@ pub struct ScanResult {
     pub total_duplicate_size: u64,
     pub scan_duration_ms: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_info_serialization() {
+        let file_info = FileInfo {
+            path: PathBuf::from("/test/path.txt"),
+            size: 1024,
+            quick_hash: Some("abc123".to_string()),
+            full_hash: None,
+            modified: 1234567890,
+            name: "path.txt".to_string(),
+            extension: Some("txt".to_string()),
+        };
+
+        let json = serde_json::to_string(&file_info).unwrap();
+        let deserialized: FileInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.size, 1024);
+        assert_eq!(deserialized.name, "path.txt");
+    }
+
+    #[test]
+    fn test_duplicate_group_serialization() {
+        let group = DuplicateGroup {
+            hash: "hash123".to_string(),
+            size: 2048,
+            files: vec![],
+        };
+
+        let json = serde_json::to_string(&group).unwrap();
+        let deserialized: DuplicateGroup = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.hash, "hash123");
+        assert_eq!(deserialized.size, 2048);
+    }
+
+    #[test]
+    fn test_scan_phase_serialization() {
+        let phases = vec![
+            ScanPhase::Discovering,
+            ScanPhase::Grouping,
+            ScanPhase::QuickHashing,
+            ScanPhase::FullHashing,
+            ScanPhase::Complete,
+        ];
+
+        for phase in phases {
+            let json = serde_json::to_string(&phase).unwrap();
+            let _: ScanPhase = serde_json::from_str(&json).unwrap();
+        }
+    }
+}
