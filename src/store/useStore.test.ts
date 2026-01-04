@@ -82,3 +82,63 @@ describe('useStore', () => {
     expect(state.selectedFiles.size).toBe(0);
   });
 });
+
+describe('date-based selection', () => {
+  const groupWithDates = {
+    hash: 'abc123',
+    size: 1024,
+    files: [
+      { path: '/newest.txt', size: 1024, quick_hash: null, full_hash: 'abc', modified: 1700000000, name: 'newest.txt', extension: 'txt' },
+      { path: '/middle.txt', size: 1024, quick_hash: null, full_hash: 'abc', modified: 1600000000, name: 'middle.txt', extension: 'txt' },
+      { path: '/oldest.txt', size: 1024, quick_hash: null, full_hash: 'abc', modified: 1500000000, name: 'oldest.txt', extension: 'txt' },
+    ],
+  };
+
+  beforeEach(() => {
+    useStore.getState().reset();
+    useStore.getState().setScanResult({
+      duplicates: [groupWithDates],
+      total_files: 3,
+      total_duplicate_size: 2048,
+      scan_duration_ms: 100,
+    });
+  });
+
+  it('selectOldestInGroup keeps oldest, selects rest', () => {
+    useStore.getState().selectOldestInGroup(groupWithDates);
+    const selected = useStore.getState().selectedFiles;
+
+    expect(selected.has('/oldest.txt')).toBe(false); // Oldest kept
+    expect(selected.has('/middle.txt')).toBe(true);  // Selected
+    expect(selected.has('/newest.txt')).toBe(true);  // Selected
+  });
+
+  it('selectNewestInGroup keeps newest, selects rest', () => {
+    useStore.getState().selectNewestInGroup(groupWithDates);
+    const selected = useStore.getState().selectedFiles;
+
+    expect(selected.has('/newest.txt')).toBe(false); // Newest kept
+    expect(selected.has('/middle.txt')).toBe(true);  // Selected
+    expect(selected.has('/oldest.txt')).toBe(true);  // Selected
+  });
+
+  it('selectAllOldest selects older files in all groups', () => {
+    useStore.getState().selectAllOldest();
+    const selected = useStore.getState().selectedFiles;
+
+    // Keeps oldest, selects newer files
+    expect(selected.has('/oldest.txt')).toBe(false);
+    expect(selected.has('/middle.txt')).toBe(true);
+    expect(selected.has('/newest.txt')).toBe(true);
+  });
+
+  it('selectAllNewest selects older files in all groups', () => {
+    useStore.getState().selectAllNewest();
+    const selected = useStore.getState().selectedFiles;
+
+    // Keeps newest, selects older files
+    expect(selected.has('/newest.txt')).toBe(false);
+    expect(selected.has('/middle.txt')).toBe(true);
+    expect(selected.has('/oldest.txt')).toBe(true);
+  });
+});

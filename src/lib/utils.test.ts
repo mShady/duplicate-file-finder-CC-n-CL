@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn, formatBytes, formatDuration } from './utils';
+import { cn, formatBytes, formatDuration, formatDate } from './utils';
 
 describe('cn', () => {
   it('merges class names correctly', () => {
@@ -51,5 +51,29 @@ describe('formatDuration', () => {
   it('formats minutes and seconds', () => {
     expect(formatDuration(90000)).toBe('1m 30s');
     expect(formatDuration(125000)).toBe('2m 5s');
+  });
+});
+
+describe('formatDate', () => {
+  it('formats today', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatDate(now)).toBe('Today');
+  });
+
+  it('formats yesterday', () => {
+    const yesterday = Math.floor(Date.now() / 1000) - 86400;
+    expect(formatDate(yesterday)).toBe('Yesterday');
+  });
+
+  it('formats days ago', () => {
+    const threeDaysAgo = Math.floor(Date.now() / 1000) - (86400 * 3);
+    expect(formatDate(threeDaysAgo)).toBe('3 days ago');
+  });
+
+  it('formats older dates with full date', () => {
+    const oldDate = Math.floor(new Date('2023-06-15').getTime() / 1000);
+    const result = formatDate(oldDate);
+    expect(result).toContain('2023');
+    expect(result).toContain('Jun');
   });
 });
