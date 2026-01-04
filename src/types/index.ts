@@ -16,10 +16,16 @@ export interface DuplicateGroup {
 
 export interface ScanProgress {
   phase: 'Discovering' | 'Grouping' | 'QuickHashing' | 'FullHashing' | 'Complete';
+  phase_number: number;           // Current phase (1-4)
+  total_phases: number;           // Total phases (4)
   files_found: number;
   files_processed: number;
   bytes_processed: number;
   current_file: string | null;
+  current_directory: string | null;  // Parent directory being scanned
+  elapsed_ms: number;             // Time elapsed since scan start
+  files_per_second: number;       // Processing speed
+  estimated_remaining_ms: number | null; // ETA (when calculable)
 }
 
 export interface ScanResult {
